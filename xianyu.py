@@ -42,70 +42,7 @@ session.mount("https://", adapter)
 
 # ===== 初始的 _m_h5_tk（第一次运行后会自动更新）=====
 CURRENT_M_H5_TK = "717336018584e9c7c54f266f5db96fca_1772912434028"
-# ===== 可选代理（在 Streamlit 侧边栏配置）=====
-PROXY_URL: Optional[str] = None
 # ===============================================
-
-
-def normalize_proxy_url(proxy_url: str) -> str:
-    proxy_url = proxy_url.strip()
-    if not proxy_url:
-        return ""
-    if not proxy_url.startswith(("http://", "https://")):
-        return f"http://{proxy_url}"
-    return proxy_url
-
-
-def build_proxies(proxy_url: Optional[str]) -> Optional[Dict[str, str]]:
-    if not proxy_url:
-        return None
-    normalized = normalize_proxy_url(proxy_url)
-    if not normalized:
-        return None
-    return {"http": normalized, "https": normalized}
-
-
-def apply_proxy_to_session(sess: requests.Session, proxy_url: Optional[str]) -> None:
-    proxies = build_proxies(proxy_url)
-    if not proxies:
-        return
-    sess.proxies.update(proxies)
-    # 仅使用我们显式配置的代理，避免环境变量干扰
-    sess.trust_env = False
-
-
-def configure_proxy(proxy_url: Optional[str]) -> None:
-    """配置全局代理（供下载与上传请求使用）"""
-    global PROXY_URL
-    PROXY_URL = normalize_proxy_url(proxy_url or "")
-    if PROXY_URL:
-        apply_proxy_to_session(session, PROXY_URL)
-
-
-def get_proxy_url_from_streamlit() -> Optional[str]:
-    """
-    在 Streamlit 侧边栏获取代理配置。
-    仅在 Streamlit 运行时生效；在 CLI 环境下自动跳过。
-    """
-    try:
-        import streamlit as st
-        try:
-            from streamlit.runtime.scriptrunner import get_script_run_ctx
-            if get_script_run_ctx() is None:
-                return None
-        except Exception:
-            return None
-    except Exception:
-        return None
-
-    with st.sidebar:
-        st.markdown("### 代理设置")
-        use_proxy = st.checkbox("启用 HTTP(S) 代理", value=False)
-        proxy_url = st.text_input("代理地址", placeholder="http://user:pass@host:port")
-
-    if use_proxy and proxy_url.strip():
-        return proxy_url.strip()
-    return None
 
 
 def create_session_with_retries() -> requests.Session:
@@ -121,7 +58,6 @@ def create_session_with_retries() -> requests.Session:
     adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
-    apply_proxy_to_session(session, PROXY_URL)
     return session
 
 
@@ -133,13 +69,11 @@ def check_url_accessibility(url: str, timeout: int = 10) -> Tuple[bool, int, str
         Tuple[bool, int, str]: (是否可访问, 状态码, 状态描述)
     """
     try:
-        proxies = build_proxies(PROXY_URL)
         response = requests.head(
             url,
             timeout=timeout,
             allow_redirects=True,
             verify=False,
-            proxies=proxies
         )
         return True, response.status_code, response.reason
     except Exception as e:
@@ -790,15 +724,176 @@ def upload_from_url(file_url: str, auth_info: dict) -> str:
         raise
 
 
+def running_in_streamlit() -> bool:
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        return get_script_run_ctx() is not None
+    except Exception:
+        return False
+
+
+def run_streamlit_app() -> None:
+    import streamlit as st
+
+    st.set_page_config(
+        page_title="闲鱼头像更新器",
+        page_icon="🌀",
+        layout="wide",
+    )
+
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Sans:wght@400;600&display=swap');
+        html, body, [class*="css"]  {
+            font-family: 'IBM Plex Sans', sans-serif;
+        }
+        .app-hero {
+            background: radial-gradient(1200px 500px at 10% -10%, #f9d6ff 0%, transparent 60%),
+                        radial-gradient(900px 400px at 110% 10%, #c7f1ff 0%, transparent 60%),
+                        linear-gradient(135deg, #f8f7ff 0%, #f5fbff 55%, #f7fff6 100%);
+            border: 1px solid rgba(30, 41, 59, 0.08);
+            border-radius: 20px;
+            padding: 28px 28px 20px 28px;
+            margin-bottom: 18px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+        .hero-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 34px;
+            font-weight: 700;
+            margin: 0 0 6px 0;
+            color: #0f172a;
+        }
+        .hero-sub {
+            font-size: 15px;
+            color: #334155;
+            margin: 0;
+        }
+        .card {
+            background: white;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+        }
+        .tiny {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .highlight {
+            background: #0f172a;
+            color: #f8fafc;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            display: inline-block;
+        }
+        .stButton>button {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 600;
+            border-radius: 12px;
+            padding: 10px 16px;
+            border: 1px solid rgba(15,23,42,0.2);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.10);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="app-hero">
+            <div class="hero-title">闲鱼头像更新器</div>
+            <p class="hero-sub">粘贴原始请求参数，自动解析后上传头像并提交更新。遇到验证页时会提示人工处理。</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_left, col_right = st.columns([1.1, 0.9], gap="large")
+
+    with col_left:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        image_url = st.text_input("图片 URL", placeholder="https://example.com/avatar.png")
+        request_text = st.text_area(
+            "原始请求参数（URL + headers + data）",
+            placeholder="粘贴从抓包工具复制的请求内容，包含 URL 参数、headers 和 data",
+            height=260,
+        )
+        manual_utdid = st.text_input("手动 utdid（可选）", placeholder="如果解析不到，可在这里填")
+        st.markdown(
+            '<span class="highlight">解析与提交</span>',
+            unsafe_allow_html=True,
+        )
+        parse_btn = st.button("解析请求")
+        run_btn = st.button("上传并更新头像")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_right:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("解析结果")
+        info = st.session_state.get("auth_info")
+        if info:
+            st.json({
+                "utdid": info.get("utdid"),
+                "cookies": list(info.get("cookies", {}).keys()),
+                "headers": list(info.get("headers", {}).keys()),
+                "params": list(info.get("params", {}).keys()),
+            })
+        else:
+            st.markdown('<div class="tiny">尚未解析。点击“解析请求”后会显示关键信息。</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="card" style="margin-top:14px;">', unsafe_allow_html=True)
+        st.subheader("运行提示")
+        st.write(
+            "如果接口返回 HTML 页面，通常是风控或需要验证。请在浏览器完成验证后再重试。"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    if parse_btn:
+        if not request_text.strip():
+            st.warning("请先粘贴原始请求参数。")
+        else:
+            info = extract_from_request(request_text)
+            if manual_utdid.strip():
+                info["utdid"] = manual_utdid.strip()
+            st.session_state["auth_info"] = info
+            if not info.get("utdid"):
+                st.warning("未能提取到 utdid，请手动填写后再试。")
+            else:
+                st.success("解析完成。")
+
+    if run_btn:
+        info = st.session_state.get("auth_info")
+        if not image_url.strip():
+            st.error("图片 URL 不能为空。")
+        elif not request_text.strip():
+            st.error("原始请求参数不能为空。")
+        else:
+            if info is None:
+                info = extract_from_request(request_text)
+            if manual_utdid.strip():
+                info["utdid"] = manual_utdid.strip()
+            if not info.get("utdid"):
+                st.error("缺少 utdid，无法继续。请手动填写。")
+            else:
+                with st.spinner("处理中，请稍候..."):
+                    try:
+                        final_url = upload_from_url(image_url.strip(), info)
+                        result = update_avatar(final_url, info)
+                        st.success("请求完成。")
+                        st.json(result)
+                    except Exception as e:
+                        st.error(str(e))
+
+
 def main():
     print("=" * 50)
     print("闲鱼头像自动更新工具 (增强版)")
     print("=" * 50)
-
-    # 尝试从 Streamlit 侧边栏读取代理配置（若在 Streamlit 中运行）
-    proxy_url = get_proxy_url_from_streamlit()
-    if proxy_url:
-        configure_proxy(proxy_url)
     
     # 先让用户输入图片URL
     print("\n" + "-" * 50)
@@ -863,4 +958,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if running_in_streamlit():
+        run_streamlit_app()
+    else:
+        main()
